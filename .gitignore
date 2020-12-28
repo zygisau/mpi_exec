@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Build content
+/cmake-build**
+
+# Clion folders
+/.idea
+
+# C++ execution file
+output
