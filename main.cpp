@@ -4,6 +4,7 @@
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
+// #include <mpi.h>
 
 using namespace std;
 
@@ -25,7 +26,7 @@ int increaseX(int *X, int index, int maxindex);
 
 //=============================================================================
 
-int main() {
+int main (int argc , char * argv []) {
 
     double ts = getTime();          // Algoritmo vykdymo pradzios laikas
 
@@ -42,7 +43,11 @@ int main() {
     double bestU = u;
     int r;
     //----- Pagrindinis ciklas ------------------------------------------------
-
+    // int MASTER_ID = 0;
+    // int id , numProcs ;
+    // MPI_Init(int& argc, &argv);
+    // MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    // MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
     while (true) {
         if (increaseX(X, numX-1, numCL)) {
             u = evaluateSolution(X);
@@ -53,6 +58,7 @@ int main() {
         }
         else break;
     }
+    // MPI_Finalize();
     //----- Rezultatu spausdinimas --------------------------------------------
 
     double tf = getTime();     // Skaiciavimu pabaigos laikas
