@@ -32,8 +32,8 @@ double factorial(double n);
 
 
 int main (int argc , char* argv[]) {
-
-    double ts = getTime();          // Algoritmo vykdymo pradzios laikas
+    MPI_Init(&argc, &argv);
+    double ts = MPI_Wtime();
 
     loadDemandPoints();             // Nuskaitomi duomenys
 
@@ -50,7 +50,6 @@ int main (int argc , char* argv[]) {
     //----- Pagrindinis ciklas ------------------------------------------------
     int MASTER_ID = 0;
     int id , numProcs;
-    MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
     MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
     MPI_Request request;
@@ -109,12 +108,12 @@ int main (int argc , char* argv[]) {
 
     //----- Rezultatu spausdinimas --------------------------------------------
     if (id == MASTER_ID) {
-        double tf = getTime();     // Skaiciavimu pabaigos laikas
         cout << "Geriausias sprendinys: ";
         for (int i=0; i<numX; i++) cout << bestX[i] << " ";
         cout << "(" << bestU << ")" << endl;
-        cout << "Skaiciavimo trukme: " << tf-ts << endl;
     }
+    double tf = MPI_Wtime();
+    cout << "Procesorius #" << id << ";\t" << "Skaiciavimo trukme: " << tf-ts << " s." << endl;
 
     MPI_Finalize();
 }
