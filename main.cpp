@@ -4,14 +4,15 @@
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
-// #include <mpi.h>
+#include <mpi.h>
+#include <array>
 
 using namespace std;
 
-int numDP = 1000;      // Vietoviu skaicius (demand points, max 10000)
-int numPF = 10;        // Esanciu objektu skaicius (preexisting facilities)
-int numCL = 25;        // Kandidatu naujiems objektams skaicius (candidate locations)
-int numX  = 5;         // Nauju objektu skaicius
+int demandPointsCount = 1000;      // Vietoviu skaicius (demand points, max 10000)
+int preexistingFacilitiesCount = 10;        // Esanciu objektu skaicius (preexisting facilities)
+int candidateLocationsCount = 25;        // Kandidatu naujiems objektams skaicius (candidate locations)
+int numX = 5;         // Nauju objektu skaicius
 
 double **demandPoints; // Geografiniai duomenys
 
@@ -23,10 +24,14 @@ void loadDemandPoints();
 double HaversineDistance(double* a, double* b);
 double evaluateSolution(int *X);
 int increaseX(int *X, int index, int maxindex);
+void splitProblemToParts(int* parts, int& numProcs, double& iterationTimes);
+void computeAndCompare(int *X, int& numX, double& u, double& bestU, int *bestX);
+double factorial(double n);
 
 //=============================================================================
 
-int main (int argc , char * argv []) {
+
+int main (int argc , char* argv[]) {
 
     double ts = getTime();          // Algoritmo vykdymo pradzios laikas
 
@@ -43,30 +48,99 @@ int main (int argc , char * argv []) {
     double bestU = u;
     int r;
     //----- Pagrindinis ciklas ------------------------------------------------
-    // int MASTER_ID = 0;
-    // int id , numProcs ;
-    // MPI_Init(int& argc, &argv);
-    // MPI_Comm_rank(MPI_COMM_WORLD, &id);
-    // MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
-    while (true) {
-        if (increaseX(X, numX-1, numCL)) {
-            u = evaluateSolution(X);
-            if (u > bestU) {
-                bestU = u;
-                for (int i=0; i<numX; i++) bestX[i] = X[i];
+    int MASTER_ID = 0;
+    int id , numProcs;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
+    MPI_Request request;
+    MPI_Status mpiStatus;
+    int* parts = new int[numProcs];
+    double iterationTimes = factorial(candidateLocationsCount) / (factorial(numX) * factorial(candidateLocationsCount - numX));
+    splitProblemToParts(parts, numProcs, iterationTimes);
+    bool stopAlgo;
+    if (id == MASTER_ID) {
+        for (int i = 0; i < iterationTimes; ++i) {
+            for (int j = 1; j < numProcs; ++j) {
+                if (increaseX(X, numX - 1, candidateLocationsCount)) {
+                    int tag = j;
+                    MPI_Isend(X, numX, MPI_INT, j, tag, MPI_COMM_WORLD, &request);
+                    i++;
+                } else {
+                    stopAlgo = true;
+                    break;
+                }
+            }
+            if (stopAlgo) {
+                break;
+            }
+
+            if (increaseX(X, numX - 1, candidateLocationsCount)) {
+                computeAndCompare(X, numX, u, bestU, bestX);
+            } else {
+                stopAlgo = true;
+                break;
             }
         }
-        else break;
+    } else {
+        for (int i = 0; i < parts[id]; ++i) {
+            int tag = id;
+            MPI_Recv(X, numX, MPI_INT, MASTER_ID, tag, MPI_COMM_WORLD, &mpiStatus);
+            computeAndCompare(X, numX, u, bestU, bestX);
+        }
     }
-    // MPI_Finalize();
+
+    if (id == MASTER_ID) {
+        int sentU;
+        int *sentX = new int[numX];
+        for (int i = 1; i < numProcs; ++i) {
+            MPI_Recv(&sentU, 1, MPI_INT, MPI_ANY_SOURCE, i, MPI_COMM_WORLD, &mpiStatus);
+            int tag = mpiStatus.MPI_SOURCE;
+            if (sentU > bestU) {
+                bestU = sentU;
+                MPI_Recv(sentX, numX, MPI_INT, MPI_ANY_SOURCE, tag*10, MPI_COMM_WORLD, &mpiStatus);
+                for (int i=0; i<numX; i++) bestX[i] = sentX[i];
+            }
+        }
+    } else {
+        MPI_Send(&bestU, 1, MPI_INT, MASTER_ID, id, MPI_COMM_WORLD);
+        MPI_Isend(bestX, numX, MPI_INT, MASTER_ID, id*10, MPI_COMM_WORLD, &request);
+    }
+
     //----- Rezultatu spausdinimas --------------------------------------------
+    if (id == MASTER_ID) {
+        double tf = getTime();     // Skaiciavimu pabaigos laikas
+        cout << "Geriausias sprendinys: ";
+        for (int i=0; i<numX; i++) cout << bestX[i] << " ";
+        cout << "(" << bestU << ")" << endl;
+        cout << "Skaiciavimo trukme: " << tf-ts << endl;
+    }
 
-    double tf = getTime();     // Skaiciavimu pabaigos laikas
+    MPI_Finalize();
+}
 
-    cout << "Geriausias sprendinys: ";
-    for (int i=0; i<numX; i++) cout << bestX[i] << " ";
-    cout << "(" << bestU << ")" << endl;
-    cout << "Skaiciavimo trukme: " << tf-ts << endl;
+void computeAndCompare(int *X, int& numX, double& u, double& bestU, int *bestX) {
+    u = evaluateSolution(X);
+    if (u > bestU) {
+        bestU = u;
+        for (int i=0; i<numX; i++) bestX[i] = X[i];
+    }
+}
+
+double factorial(double n) {
+    if (n < 0) {
+        return 0;
+    }
+    return !n ? 1.0 : (n * factorial(n - 1));
+}
+
+void splitProblemToParts(int* parts, int& numProcs, double& iterationTimes) {
+    for (int i = 0; i < numProcs; ++i) {
+        parts[i] = iterationTimes / numProcs;
+    }
+    for (int i = 0; i < candidateLocationsCount%numProcs; ++i) {
+        parts[i] += candidateLocationsCount%numProcs;
+    }
 }
 
 //=============================================================================
@@ -74,8 +148,8 @@ int main (int argc , char * argv []) {
 void loadDemandPoints() {
     FILE *f;
     f = fopen("demandPoints.dat", "r");
-    demandPoints = new double*[numDP];
-    for (int i=0; i<numDP; i++) {
+    demandPoints = new double*[demandPointsCount];
+    for (int i=0; i < demandPointsCount; i++) {
         demandPoints[i] = new double[3];
         fscanf(f, "%lf%lf%lf", &demandPoints[i][0], &demandPoints[i][1], &demandPoints[i][2]);
     }
@@ -109,9 +183,9 @@ double evaluateSolution(int *X) {
     int bestPF;
     int bestX;
     double d;
-    for (int i=0; i<numDP; i++) {
+    for (int i=0; i < demandPointsCount; i++) {
         bestPF = 1e5;
-        for (int j=0; j<numPF; j++) {
+        for (int j=0; j < preexistingFacilitiesCount; j++) {
             d = HaversineDistance(demandPoints[i], demandPoints[j]);
             if (d < bestPF) bestPF = d;
         }
@@ -128,12 +202,22 @@ double evaluateSolution(int *X) {
 
 //=============================================================================
 
+bool isNextLocationAvailable(int *X, int index, int maxCityIndex) {
+    int nextLocationIndex = X[index]+1;
+    int occupiedIndexCount = numX - index - 1;
+    int availableNewCitiesMaxIndex = maxCityIndex - occupiedIndexCount;
+    return nextLocationIndex < availableNewCitiesMaxIndex;
+}
+
 int increaseX(int *X, int index, int maxindex) {
-    if (X[index]+1 < maxindex-(numX-index-1)) {
+//    if next location is available
+    if (isNextLocationAvailable(X, index, maxindex)) {
         X[index]++;
     }
     else {
-        if ((index == 0) && (X[index]+1 == maxindex-(numX-index-1))) {
+        bool isLastCity = index == 0;
+        bool isNextLocationMaxAvailableLocationsIndex = X[index]+1 == maxindex-(numX-index-1);
+        if (isLastCity && isNextLocationMaxAvailableLocationsIndex) {
             return 0;
         }
         else {
