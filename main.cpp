@@ -12,7 +12,7 @@ using namespace std;
 int demandPointsCount = 1000;      // Vietoviu skaicius (demand points, max 10000)
 int preexistingFacilitiesCount = 10;        // Esanciu objektu skaicius (preexisting facilities)
 int candidateLocationsCount = 25;        // Kandidatu naujiems objektams skaicius (candidate locations)
-int numX = 3;         // Nauju objektu skaicius
+int numX = 5;         // Nauju objektu skaicius
 
 double **demandPoints; // Geografiniai duomenys
 
@@ -55,7 +55,7 @@ int main (int argc , char* argv[]) {
     MPI_Request request;
     MPI_Status mpiStatus;
     int* parts = new int[numProcs];
-    double iterationTimes = factorial(candidateLocationsCount) / (factorial(numX) * factorial(candidateLocationsCount - numX));
+    double iterationTimes = (factorial(candidateLocationsCount) / (factorial(numX) * factorial(candidateLocationsCount - numX))) - 1;
     splitProblemToParts(parts, numProcs, iterationTimes);
     bool stopAlgo;
     if (id == MASTER_ID) {
@@ -90,26 +90,26 @@ int main (int argc , char* argv[]) {
     }
 
     if (id == MASTER_ID) {
-        int sentU;
+        double sentU;
         int *sentX = new int[numX];
         for (int i = 1; i < numProcs; ++i) {
-            MPI_Recv(&sentU, 1, MPI_INT, MPI_ANY_SOURCE, i, MPI_COMM_WORLD, &mpiStatus);
+            MPI_Recv(&sentU, 1, MPI_DOUBLE, MPI_ANY_SOURCE, i, MPI_COMM_WORLD, &mpiStatus);
             int tag = mpiStatus.MPI_SOURCE;
-            if (sentU > bestU) {
+            if (sentU >= bestU) {
                 bestU = sentU;
-                MPI_Recv(sentX, numX, MPI_INT, MPI_ANY_SOURCE, tag*10, MPI_COMM_WORLD, &mpiStatus);
+                MPI_Recv(sentX, numX, MPI_INT, MPI_ANY_SOURCE, (tag+5)*10, MPI_COMM_WORLD, &mpiStatus);
                 for (int i=0; i<numX; i++) bestX[i] = sentX[i];
             }
         }
     } else {
-        MPI_Send(&bestU, 1, MPI_INT, MASTER_ID, id, MPI_COMM_WORLD);
-        MPI_Isend(bestX, numX, MPI_INT, MASTER_ID, id*10, MPI_COMM_WORLD, &request);
+        MPI_Send(&bestU, 1, MPI_DOUBLE, MASTER_ID, id, MPI_COMM_WORLD);
+        MPI_Isend(bestX, numX, MPI_INT, MASTER_ID, (id+5)*10, MPI_COMM_WORLD, &request);
     }
 
     //----- Rezultatu spausdinimas --------------------------------------------
     if (id == MASTER_ID) {
         double tf = MPI_Wtime();
-        cout << "Geriausias sprendinys: ";
+        cout << "Geriausias sprendinys proc #" << id << ": ";
         for (int i=0; i<numX; i++) cout << bestX[i] << " ";
         cout << "(" << bestU << ")" << endl;
         cout << "Skaiciavimo trukme: " << tf-ts << " s." << endl;
@@ -137,8 +137,10 @@ void splitProblemToParts(int* parts, int& numProcs, double& iterationTimes) {
     for (int i = 0; i < numProcs; ++i) {
         parts[i] = iterationTimes / numProcs;
     }
-    for (int i = 0; i < candidateLocationsCount%numProcs; ++i) {
-        parts[i] += candidateLocationsCount%numProcs;
+    if (std::fmod(iterationTimes, numProcs) != 0) {
+        for (int i = 0; i < std::fmod(iterationTimes, numProcs); ++i) {
+            parts[i + 1] += 1;
+        }
     }
 }
 
@@ -201,22 +203,12 @@ double evaluateSolution(int *X) {
 
 //=============================================================================
 
-bool isNextLocationAvailable(int *X, int index, int maxCityIndex) {
-    int nextLocationIndex = X[index]+1;
-    int occupiedIndexCount = numX - index - 1;
-    int availableNewCitiesMaxIndex = maxCityIndex - occupiedIndexCount;
-    return nextLocationIndex < availableNewCitiesMaxIndex;
-}
-
 int increaseX(int *X, int index, int maxindex) {
-//    if next location is available
-    if (isNextLocationAvailable(X, index, maxindex)) {
+    if (X[index]+1 < maxindex-(numX-index-1)) {
         X[index]++;
     }
     else {
-        bool isLastCity = index == 0;
-        bool isNextLocationMaxAvailableLocationsIndex = X[index]+1 == maxindex-(numX-index-1);
-        if (isLastCity && isNextLocationMaxAvailableLocationsIndex) {
+        if ((index == 0) && (X[index]+1 == maxindex-(numX-index-1))) {
             return 0;
         }
         else {
