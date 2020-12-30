@@ -1,7 +1,7 @@
 CC=mpic++
 CR=mpirun
 
-CPU_COUNT=5
+CPU_COUNT=4
 
 all: main.cpp
 	${CC} -std=c++17 -g main.cpp -o output.o

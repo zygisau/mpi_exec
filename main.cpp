@@ -12,7 +12,7 @@ using namespace std;
 int demandPointsCount = 1000;      // Vietoviu skaicius (demand points, max 10000)
 int preexistingFacilitiesCount = 10;        // Esanciu objektu skaicius (preexisting facilities)
 int candidateLocationsCount = 25;        // Kandidatu naujiems objektams skaicius (candidate locations)
-int numX = 5;         // Nauju objektu skaicius
+int numX = 3;         // Nauju objektu skaicius
 
 double **demandPoints; // Geografiniai duomenys
 
@@ -108,12 +108,12 @@ int main (int argc , char* argv[]) {
 
     //----- Rezultatu spausdinimas --------------------------------------------
     if (id == MASTER_ID) {
+        double tf = MPI_Wtime();
         cout << "Geriausias sprendinys: ";
         for (int i=0; i<numX; i++) cout << bestX[i] << " ";
         cout << "(" << bestU << ")" << endl;
+        cout << "Skaiciavimo trukme: " << tf-ts << " s." << endl;
     }
-    double tf = MPI_Wtime();
-    cout << "Procesorius #" << id << ";\t" << "Skaiciavimo trukme: " << tf-ts << " s." << endl;
 
     MPI_Finalize();
 }
